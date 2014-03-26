@@ -7,9 +7,7 @@ var _base64Tag = '<data>';
 var _endTag = "</>";
 var _useNeedle = true;
 
-/*
-*var base64Tag string|false
-*/
+
 exports.config = function(opts){
 	if(opts.hasOwnProperty('base64Tag'))	_base64Tag = opts.base64Tag;
 	if(opts.hasOwnProperty('endTag'))		_endTag  = opts.endTag;
@@ -17,11 +15,6 @@ exports.config = function(opts){
 }
 
 exports.parse = function(strChunk, callback){
-	/*
-	var needle = needle || '<data>';
-
-	if( needle == false) needle = false;
-	*/
 
 	var needle = _base64Tag;
 
@@ -34,7 +27,7 @@ exports.parse = function(strChunk, callback){
 	}
 	
 	if( !_streamProgress ){
-    	if( idx == -1 ) return;
+    	if( idx == -1 ) return strChunk; //cb(null, true, null, null);
 
     	if( idx >= 0){
     		_streamProgress = true;
@@ -50,17 +43,18 @@ exports.parse = function(strChunk, callback){
     var postRemainingStr = null;
     var base64Str = null;
     
-    if( _streamProgress == false ){
+    var transformedChunk = '';
 
-	    if( idx > 0 ){
-	    	preRemainingStr = strChunk.substring(0, idx);
-	    }
+    if( idx > 0 ){
+    	preRemainingStr = strChunk.substring(0, idx);
+    }
 
-	    if( (strChunk.length) > ((newlineIdx + _endTag.length)-1) ){
-	    	postRemainingStr = strChunk.substring((newlineIdx + _endTag.length));
-	    }
+    if( (strChunk.length) > ((newlineIdx + _endTag.length)-1) ){
+    	postRemainingStr = strChunk.substring((newlineIdx + _endTag.length));
+    }
 
-	}
+	if( preRemainingStr ) transformedChunk += preRemainingStr;
+	if( postRemainingStr ) transformedChunk += postRemainingStr;
 
     var endIdx = strChunk.length;
     if(newlineIdx >= 0) endIdx = newlineIdx;
@@ -86,6 +80,7 @@ exports.parse = function(strChunk, callback){
 	}
 
     var isFinished = !_streamProgress;
-    if( cb ) cb(base64Str, isFinished, preRemainingStr, postRemainingStr);
+    if( cb ) cb(base64Str, isFinished);
 
+    return (transformedChunk) ? transformedChunk : null;
 }

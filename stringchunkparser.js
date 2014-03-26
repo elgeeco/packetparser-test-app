@@ -2,76 +2,87 @@
 
 var objs_arr = [];
 
+var _obj = {};
+
 var _delimiter = ':';
 var _endTag = "\n";
 
-var _mappings = [];
+var _mappings = {};
 
-exports.configs = function(opts){
+var _tmpStr = '';
+
+exports.config = function(opts){
 	if( opts.hasOwnProperty('delimiter') ) 	_delimiter = opts.delimiter;
 	if( opts.hasOwnProperty('endTag') ) 	_endTag = opts.endTag;  
 	if( opts.hasOwnProperty('mappings') ) 	_mappings = opts.mappings;
 }
 
-exports.parse = function(str, delimiter){
+var trim = function(str){
+	return str.replace(/^\s+|\s+$/g, '');
+};
 
-	var delimiter = delimiter || ':';
+exports.parse = function(str, cb){
+
+	if( typeof(str) !== 'string' ) return;
+
+	var delimiter = _delimiter || ':';
 
 	var substr = str.trim();
 	
 	if( !substr.length ) return;
 
-	if( substr.substr( -1 ) == "\n"){
-		substr = substr.substr(0, -1);
-	}
+	var endTagIdx = substr.indexOf(_endTag);
+	
+	var slicedStr = _tmpStr + substr;
 
-	var segments_arr = substr.split( delimiter );
-
-	var obj = {};
+	var segments_arr = slicedStr.split( delimiter );
 
 	segments_arr.forEach(function(seg){
 
-	  var idx = seg.indexOf('>');
-	  var type = seg.substring(1, idx);
-	  var content = seg.substring(idx + 1);
+		Object.keys(_mappings).forEach(function(key){
 
-	  switch(type){
-	    case 'id':
-	      obj['id'] = content;
-	      break;
+			var el = _mappings[key];
+			if( seg.indexOf(el.tag) != -1 ){
+				
+				var startIdx =  slicedStr.indexOf(el.tag);
+				if( startIdx == -1 ) return;
 
-	    case 'filename':
-	      obj['filename'] = content;
-	      break;
+				var delimiterIdx = slicedStr.indexOf( _delimiter, startIdx);
+				if( delimiterIdx == -1 ) return;
 
-	    case 'filesize':
-	      obj['filesize'] = content + ' bytes';
-	      break;
+				var endIdx = delimiterIdx + (_delimiter.length );
 
-	    case 'timestamp':
-	      var date = new Date(parseInt(content) * 1000 );
-	      var hours = date.getHours();
-	      var minutes = date.getMinutes();
-	      var secondes = date.getSeconds();
-	      obj['date'] = hours + ':' + minutes + ':' + secondes; 
-	      break;
+				var s_left = slicedStr.substring(0, startIdx);  
+				var s_right = slicedStr.substring(endIdx);
+				slicedStr = s_left + s_right;
 
-	    case '//data':
-	      //obj['message'] = new Buffer(content, 'base64').toString();
-	      //var b = new Buffer(content, 'base64');
-	      //fs.writeFileSync('foo.gif', b, {mode: 0777});
-	      break;
-	  }
+				var content = seg.replace(el.tag, "");
+				var str = el.transform(content);
+				_obj[key] = str;	
+
+				return;
+			}
+
+		});
 
 	});
-
-	if(  _isEmptyObject(obj) ){
-		conole.log('Data Object has no propertys');
-	}else{
-		objs_arr.push(obj);
-		console.log("Data Object: " + JSON.stringify(obj));
-	}
 	
+	_tmpStr = slicedStr;
+
+	if( endTagIdx >= 0 ){
+
+		if(  _isEmptyObject(_obj) ){
+			console.log('Data Object has no propertys');
+		}else{
+			objs_arr.push(_obj);
+		}
+
+		if( typeof cb == 'function' ) cb( _obj );
+
+		_obj = {};
+		_tmpStr = '';	
+	}
+
 }
 
 exports.getItem = function(id){
