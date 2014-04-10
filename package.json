@@ -1,5 +1,5 @@
 {
-  "name": "packetparser test application",
+  "name": "packetparser-test-app",
   "version": "0.0.2",
   "private": true,
   "scripts": {
@@ -8,8 +8,8 @@
   "dependencies": {
     "colors": "0.6.x",
 	"dircleaner": "git+https://git@github.com/elgeeco/dircleaner.git",
-	"packetparser": "git+https://git@github.com:elgeeco/packetparser.git",
+	"packetparser": "git+https://git@github.com/elgeeco/packetparser.git",
 	"base64splitter": "git+https://git@github.com/elgeeco/base64splitter.git",
-	"dirreader": "git+https://git@github.com:elgeeco/dirreader.git"
+	"dirreader": "git+https://git@github.com/elgeeco/dirreader.git"
   }
 }
