@@ -1,11 +1,15 @@
 {
-  "name": "application-name",
-  "version": "0.0.1",
+  "name": "packetparser test application",
+  "version": "0.0.2",
   "private": true,
   "scripts": {
     "start": "node app.js"
   },
   "dependencies": {
-    "colors": "0.6.x"
+    "colors": "0.6.x",
+	"dircleaner": "git+https://git@github.com/elgeeco/dircleaner.git",
+	"packetparser": "git+https://git@github.com:elgeeco/packetparser.git",
+	"base64splitter": "git+https://git@github.com/elgeeco/base64splitter.git",
+	"dirreader": "git+https://git@github.com:elgeeco/dirreader.git"
   }
 }

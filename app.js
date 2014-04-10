@@ -3,61 +3,35 @@
 var fs = require('fs');
 var path = require('path');
 var PacketParser = require('packetparser');
-var base64filegenerator = require('./base64filegenerator');
-var dircreator = require('./dircreator');
+var base64splitter = require('base64splitter');
+var dircleaner = require('dircleaner');
 var colors = require('colors');
+var maps = require('./lib/mappings');
 
-var writeStream = null;
-var filepath = __dirname + path.sep + 'files';
+//------------------------------------------------------
+//SETUP
+//------------------------------------------------------
+var FILEPATH = path.join(__dirname, 'files_copy');
+var SEND_INTERVAL = 500;
+var FILES = [base64splitter.pdfImage, base64splitter.ghostImage];
+//------------------------------------------------------
 
-var files_arr = [base64filegenerator.pdfIcon(), base64filegenerator.pdfImage(), base64filegenerator.lockImage()];
-
+var _writeStream = null;
 var _c = 0;
 var _dataChunks_arr = null;
 var _files_idx = -1;
-
 var _lastFileTmpPath = null;
 var _lastFileOrigName = null;
 var _fileWrittenFlag = false;
-
-var maps = {
-    id: { 
-        tag:'<id>',
-        transform: function(content){
-            return content;
-        }
-    },
-    filename: {
-        tag: '<filename>',
-        transform: function(content){
-            return content;
-        }
-    },
-    filesize: { 
-        tag: '<filesize>',
-        transform: function(content){
-            return content + ' bytes';
-        }
-    },
-    timestamp: {
-        tag: '<timestamp>',
-        transform: function(content){
-            var date = new Date(parseInt(content) * 1000 );
-            var hours = date.getHours();
-            var minutes = date.getMinutes();
-            var secondes = date.getSeconds();
-            return hours + ':' + minutes + ':' + secondes;
-        } 
-    }
-};
+var _lastSID = null;
 
 var packetParser = PacketParser.create();
 packetParser.config({endTag: '<br/>', delimiter: '</>', mappings: maps});
 
-packetParser.on(PacketParser.EVENT_BASE64_PARSED_DATA, function(base64data){
+packetParser.on(PacketParser.EVENT_BASE64_PARSED_DATA, function(base64data, streamID){
     var b = new Buffer(base64data, 'base64');
 
-    writeStream.write(b,  function(err){
+    _writeStream.write(b,  function(err){
         if(err) return console.log(err.message);
 
         console.log("\nWrite chunk into file".green);
@@ -67,40 +41,54 @@ packetParser.on(PacketParser.EVENT_BASE64_PARSED_DATA, function(base64data){
     });
 });
 
-packetParser.on(PacketParser.EVENT_BASE64_PARSING_FINISH, function(){
-    console.log("All Base64 Chunks received - Write File end".blue);
-    writeStream.end();
+packetParser.on(PacketParser.EVENT_BASE64_PARSING_FINISH, function(streamID){
+    console.log("All Base64 Chunks received for stream: %s".blue, streamID);
+    _writeStream.end();
 });
 
-packetParser.on(PacketParser.EVENT_PACKET_PARSED, function(){
-    console.log("Packet parsed");
+packetParser.on(PacketParser.EVENT_PACKET_PARSED, function(streamID){
+    console.log("Packet parsed for stream %s", streamID);
     _sendNext();
 });
 
-packetParser.on(PacketParser.EVENT_PACKET_PARSING_FINISH, function(filedata){
-    console.log("Filedata: "  + JSON.stringify( filedata ) );
-    _lastFileOrigName = filedata.filename;
-    _sendNext(true);
+packetParser.on(PacketParser.EVENT_PACKET_PARSING_FINISH, function(filedata, notes, streamID){
+    console.log("Filedata: " + JSON.stringify( filedata ) + " Notes: " + notes + ' Stream ID: ' + streamID);
+
+    var aborted = false;
+    notes.forEach(function(note){
+        if(note == 'aborted' ) aborted = true; 
+    });
+
+    if( !aborted){
+        _lastFileOrigName = filedata.filename;
+        _sendNext(true);
+    }else{
+        fs.unlink(_lastFileTmpPath, function(err){
+            if(err) console.log(err);
+        });
+    }
 });
 
-var iv = 500;
+packetParser.on(PacketParser.EVENT_PACKET_PARSING_ERROR, function(err){
+    console.log("Error parsing packets: " + err.message);
+});
+
 function _sendNext(nextFile){
     nextFile = nextFile || false;
 
     if( nextFile ){
         //Wait until file was written...
         if( _fileWrittenFlag ){
-            fs.rename( _lastFileTmpPath , filepath + path.sep + _lastFileOrigName);
-            setTimeout(function(){_sendDataChunks(nextFile);},iv);
+            fs.rename( _lastFileTmpPath , path.join(FILEPATH, _lastFileOrigName) );
+            setTimeout(function(){_sendDataChunks(nextFile);},SEND_INTERVAL);
         }else{
-            setTimeout(function(){_sendNext(nextFile);},iv);
+            setTimeout(function(){_sendNext(nextFile);},SEND_INTERVAL);
         }  
     }else{
-        setTimeout(function(){_sendDataChunks(nextFile);},iv);
+        setTimeout(function(){_sendDataChunks(nextFile);},SEND_INTERVAL);
     }
 
 }
-
 
 function _sendDataChunks(nextFile){
 
@@ -111,57 +99,61 @@ function _sendDataChunks(nextFile){
 
     if( nextFile ){
 
-        if( _files_idx == files_arr.length - 1 ){
+        if( _files_idx == FILES.length - 1 ){
             console.log("\nAll Files Transmitted".yellow);
             return;
         }
 
         _files_idx++;
+
         _lastFileTmpPath = null;
         _lastFileOrigName = null;
-        _fileWrittenFlag = false;
+        _fileWrittenFlag = false;       
 
         var tmpFile = 'tmp-' + Math.round(Math.random() * 99999999);
-        _lastFileTmpPath = filepath + path.sep +  tmpFile; 
+        _lastFileTmpPath = path.join(FILEPATH, tmpFile); 
 
-        writeStream = null;
-        writeStream = fs.createWriteStream( _lastFileTmpPath , {flags: 'w',  encoding: 'base64'}); 
-        writeStream.on('finish', function(){
+        if( _writeStream ) _writeStream.removeAllListeners();
+
+        _writeStream = null;
+        _writeStream = fs.createWriteStream( _lastFileTmpPath , {flags: 'w',  encoding: 'base64'}); 
+        _writeStream.on('finish', function(){
             _fileWrittenFlag = true;
         });
 
         _c = 0;
 
-        file = files_arr[ _files_idx ];
+        file = FILES[ _files_idx ];
 
-        var dataChunks_arr = base64filegenerator.divideIntoChunks(file.data, true, true);
-        dataChunks_arr[0] = "<data>" + dataChunks_arr[0];
-        dataChunks_arr[dataChunks_arr.length - 1] = dataChunks_arr[dataChunks_arr.length - 1] + "</><br/>";
-        //_dataChunks_arr = dataChunks_arr;
+        var dataChunks_arr = base64splitter.explode(file.data, true, true);
+        dataChunks_arr[dataChunks_arr.length - 1] = dataChunks_arr[dataChunks_arr.length - 1] + '</>';
+        dataChunks_arr.push('<br/>');
 
-         //var testStr_arr = ["<id>10</><filen","am","e>bi", "ld.jpg</><filesize>12342","353</><times", "tamp>1243543432</>"];
-         var fileInfosStr = "<id>{id}</><filename>{filename}</><filesize>{filesize}</><timestamp>{timestamp}</>";
-         fileInfosStr = fileInfosStr.replace('{id}', Math.round(Math.random() * 100 ));
-         fileInfosStr = fileInfosStr.replace('{filename}', files_arr[_files_idx].filename );
-         fileInfosStr = fileInfosStr.replace('{filesize}', Math.round( Math.random() * 1000000 ) );
-         fileInfosStr = fileInfosStr.replace('{timestamp}', 1000000000 + (Math.round(Math.random() * 999999999)));
+        var fileInfosStr = "<id>{id}</><filename>{filename}</><filesize>{filesize}</><timestamp>{timestamp}</><data>";
+        fileInfosStr = fileInfosStr.replace('{id}', Math.round(Math.random() * 100 ));
+        fileInfosStr = fileInfosStr.replace('{filename}', FILES[_files_idx].filename );
+        fileInfosStr = fileInfosStr.replace('{filesize}', Math.round( Math.random() * 1000000 ) );
+        fileInfosStr = fileInfosStr.replace('{timestamp}', 1000000000 + (Math.round(Math.random() * 999999999)));
 
-         var fileInfosStr_arr =  base64filegenerator.divideIntoChunks( fileInfosStr, true, false, 3, 4 );
-         _dataChunks_arr = fileInfosStr_arr.concat(dataChunks_arr); 
+        var fileInfosStr_arr =  base64splitter.explode( fileInfosStr, true, false, 3, 4 );
+        _dataChunks_arr = fileInfosStr_arr.concat(dataChunks_arr); 
 
-         console.log("All Package Chunks: ".green);
-         console.log( _dataChunks_arr);
+        console.log("All Package Chunks: ".green);
+        console.log( _dataChunks_arr);
+
+        _lastSID = Math.round( Math.random() * 9999999 );
+        console.log( _lastSID.toString().red )
     }
      
     data += _dataChunks_arr[ _c ]; 
 
-    packetParser.parse(data);
+    packetParser.parse(data, _lastSID);
 
     _c++;
 };
 
+(function _init(){
+    dircleaner.clean(FILEPATH, true);
+    _sendDataChunks(true);
+})();
 
-dircreator.createdir(filepath);
-
-//start simulation
-_sendDataChunks(true);
